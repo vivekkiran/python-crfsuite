@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import glob
-import sys
 from distutils.command.build_ext import build_ext
 
 from Cython.Build import cythonize
@@ -46,9 +45,10 @@ class build_ext_check_gcc(build_ext):
         ):
             c._compile = c_compile
 
-        elif self.compiler.compiler_type == "msvc":
-            if sys.version_info[:2] < (3, 5):
-                c.include_dirs.extend(["crfsuite/win32"])
+        elif c.compiler_type == "msvc":
+            # Let CRFsuite open files with non-ASCII names; see the header.
+            for extension in self.extensions:
+                extension.extra_compile_args.append("/FI_win32_utf8_fopen.h")
 
         build_ext.build_extensions(self)
 

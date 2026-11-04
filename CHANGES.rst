@@ -1,6 +1,14 @@
 Changes
 =======
 
+0.9.13 (unreleased)
+-------------------
+
+* ``Trainer.train``, ``Tagger.open`` and ``Tagger.dump`` accept
+  ``os.PathLike`` objects (e.g. ``pathlib.Path``) as file names.
+* Fixed model file names with non-ASCII characters on Windows: ``Trainer.train``
+  created a file with a mangled name and ``Tagger.open`` couldn't open it.
+
 0.9.12 (2025-12-23)
 -------------------
 

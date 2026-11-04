@@ -344,7 +344,7 @@ cdef class BaseTrainer(object):
 
         Parameters
         ----------
-        model : string
+        model : str or os.PathLike
             The filename to which the trained model is stored.
             If this value is empty, this function does not
             write out a model file.
@@ -355,6 +355,7 @@ cdef class BaseTrainer(object):
             for training, but for holdout evaluation.
             Default value is -1, meaning "use all instances for training".
         """
+        model = os.fspath(model)
         self._before_train()
         status_code = self.c_trainer.train(model, holdout)
         if status_code != crfsuite_api.CRFSUITE_SUCCESS:
@@ -561,10 +562,11 @@ cdef class Tagger(object):
 
         Parameters
         ----------
-        name : string
+        name : str or os.PathLike
             The file name of the model file.
 
         """
+        name = os.fspath(name)
         # We need to do some basic checks ourselves because crfsuite
         # may segfault if the file is invalid.
         # See https://github.com/chokkan/crfsuite/pull/24
@@ -693,7 +695,7 @@ cdef class Tagger(object):
 
         Parameters
         ----------
-        filename : string, optional
+        filename : str or os.PathLike, optional
             File name to dump the model to.
             If None, the model is dumped to stdout.
         """
