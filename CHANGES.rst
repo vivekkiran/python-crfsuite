@@ -1,6 +1,12 @@
 Changes
 =======
 
+0.9.13 (unreleased)
+-------------------
+
+* Tagging with a model that has no labels (e.g. one trained without any data)
+  raises ``ValueError`` instead of crashing (#28).
+
 0.9.12 (2025-12-23)
 -------------------
 
