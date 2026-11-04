@@ -146,13 +146,56 @@ def test_open_inmemory_invalid():
         tagger.open_inmemory(b"lCRFabc")
 
 
-@pytest.mark.xfail(
-    reason="see https://github.com/scrapinghub/python-crfsuite/issues/28", run=False
-)
-def test_tag_not_opened(xseq):
+_NOT_OPENED_CALLS = {
+    "tag": lambda tagger, xseq: tagger.tag(xseq),
+    "tag-current": lambda tagger, xseq: tagger.tag(),
+    "set": lambda tagger, xseq: tagger.set(xseq),
+    "labels": lambda tagger, xseq: tagger.labels(),
+    "probability": lambda tagger, xseq: tagger.probability(["x"]),
+    "marginal": lambda tagger, xseq: tagger.marginal("x", 0),
+}
+
+
+@pytest.mark.parametrize("call", _NOT_OPENED_CALLS.values(), ids=_NOT_OPENED_CALLS)
+def test_tag_not_opened(xseq, call):
+    # https://github.com/scrapinghub/python-crfsuite/issues/28
     tagger = Tagger()
-    with pytest.raises(Exception):
-        tagger.tag(xseq)
+    with pytest.raises(ValueError, match="^The tagger is not opened$"):
+        call(tagger, xseq)
+
+
+@pytest.mark.parametrize("call", _NOT_OPENED_CALLS.values(), ids=_NOT_OPENED_CALLS)
+def test_tag_closed(model_filename, xseq, call):
+    tagger = Tagger()
+    tagger.open(model_filename)
+    tagger.close()
+    with pytest.raises(ValueError, match="^The tagger is not opened$"):
+        call(tagger, xseq)
+
+
+@pytest.mark.parametrize(
+    "train_xseq, train_yseq",
+    [
+        pytest.param(None, None, id="no-data"),
+        pytest.param([], [], id="empty-sequence"),
+    ],
+)
+def test_tag_model_without_labels(tmpdir, xseq, train_xseq, train_yseq):
+    # https://github.com/scrapinghub/python-crfsuite/issues/28: a model
+    # trained without data has no labels, and tagging with it used to crash.
+    model_filename = str(tmpdir.join("empty.crfsuite"))
+    trainer = Trainer(verbose=False)
+    if train_xseq is not None:
+        trainer.append(train_xseq, train_yseq)
+    trainer.train(model_filename)
+
+    with Tagger().open(model_filename) as tagger:
+        assert tagger.labels() == []
+        assert tagger.tag([]) == []
+        with pytest.raises(ValueError, match="no labels"):
+            tagger.tag(xseq)
+        with pytest.raises(ValueError, match="no labels"):
+            tagger.tag()  # re-tag the sequence set by the failed call
 
 
 def test_tag(model_filename, xseq, yseq):
