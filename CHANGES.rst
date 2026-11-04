@@ -1,6 +1,12 @@
 Changes
 =======
 
+0.9.13 (unreleased)
+-------------------
+
+* Restored macOS x86_64 (Intel) wheels, missing since 0.9.11 when the macOS
+  CI runner moved to Apple Silicon.
+
 0.9.12 (2025-12-23)
 -------------------
 

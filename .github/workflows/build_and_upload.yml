@@ -19,9 +19,15 @@ jobs:
       - uses: "actions/checkout@v4"
         with:
           submodules: true
+      - name: "Install Rosetta 2 (to test x86_64 wheels on Apple Silicon)"
+        if: runner.os == 'macOS'
+        run: "sudo softwareupdate --install-rosetta --agree-to-license || true"
       - name: "Build wheels"
         uses: "pypa/cibuildwheel@v3.3.0"
         env:
+          # macos-latest runs on Apple Silicon; build Intel wheels there too
+          # (cross-compiled, tested under Rosetta 2).
+          CIBW_ARCHS_MACOS: "x86_64 arm64"
           CIBW_SKIP: "pp* cp38-* cp39-* cp310-win_arm64"
           CIBW_TEST_REQUIRES: "pytest"
           CIBW_TEST_COMMAND: "pytest {project}/tests --doctest-modules"
