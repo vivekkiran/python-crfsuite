@@ -2,7 +2,7 @@ import gc
 import pathlib
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 
@@ -137,6 +137,36 @@ def test_tagger_not_opened(xseq, method):
 def test_tag(model_filename, xseq, yseq):
     with Tagger().open(model_filename) as tagger:
         assert tagger.tag(xseq) == yseq
+
+
+def test_open_inmemory_while_tagging_in_threads(model_bytes, xseq, yseq):
+    # Re-opening a shared tagger from fresh buffers while other threads tag
+    # with it: the model/buffer swap happens under the tagger lock, so a
+    # tagger never reads a buffer that has already been released.
+    tagger = Tagger()
+    tagger.open_inmemory(bytes(bytearray(model_bytes)))
+    done = Event()
+
+    def reopen():
+        try:
+            for _ in range(300):
+                # The previous buffer is released as soon as this returns;
+                # overwrite released memory so a dangling read gets junk.
+                tagger.open_inmemory(bytes(bytearray(model_bytes)))
+                junk = _reuse_freed_memory(len(model_bytes))
+                del junk
+        finally:
+            done.set()
+
+    def tag():
+        while not done.is_set():
+            assert tagger.tag(xseq) == yseq
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(tag) for _ in range(3)] + [pool.submit(reopen)]
+        for future in futures:
+            future.result()
+    tagger.close()
 
 
 def test_tag_shared_between_threads(model_filename, xseq):
