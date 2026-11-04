@@ -49,8 +49,6 @@ cdef extern from "trainer_wrapper.hpp" namespace "CRFSuiteWrapper":
 
 cdef extern from "tagger_wrapper.hpp" namespace "CRFSuiteWrapper":
 
-    ctypedef object (*messagefunc)(object self, string message)
-
     cdef cppclass Tagger:
         Tagger() except +
         int open(string) except +

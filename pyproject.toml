@@ -7,13 +7,15 @@ authors = [
   {name = "Mikhail Korobov", email = "kmike84@gmail.com"},
 ]
 readme = "README.rst"
-license = {text = "MIT License", url = "http://www.opensource.org/licenses/mit-license.php"}
+# python-crfsuite and the bundled liblbfgs are MIT; the bundled CRFsuite is
+# BSD-3-Clause. Their license texts ship in the sdist and the wheels.
+license = "MIT AND BSD-3-Clause"
+license-files = ["LICENSE.txt", "crfsuite/COPYING", "liblbfgs/COPYING"]
 requires-python = ">=3.10"
 classifiers = [
    "Development Status :: 4 - Beta",
    "Intended Audience :: Developers",
    "Intended Audience :: Science/Research",
-   "License :: OSI Approved :: MIT License",
    "Programming Language :: Cython",
    "Programming Language :: Python",
    "Programming Language :: Python :: 3",
@@ -31,6 +33,10 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/scrapinghub/python-crfsuite"
+Source = "https://github.com/scrapinghub/python-crfsuite"
+Issues = "https://github.com/scrapinghub/python-crfsuite/issues"
+Changelog = "https://github.com/scrapinghub/python-crfsuite/blob/master/CHANGES.rst"
+Documentation = "https://python-crfsuite.readthedocs.io/"
 
 [project.optional-dependencies]
 dev = ["tox",
@@ -40,7 +46,7 @@ dev = ["tox",
 ]
 
 [build-system]
-requires = ["setuptools>=42", "wheel", "cython"]
+requires = ["setuptools>=77", "wheel", "cython"]
 build-backend = "setuptools.build_meta"
 
 
@@ -71,4 +77,4 @@ testpaths = [
 
 [tool.isort]
 profile = "black"
-src_paths = ["usaddress", "tests"]
+src_paths = ["pycrfsuite", "tests"]

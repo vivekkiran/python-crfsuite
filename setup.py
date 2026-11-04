@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 import glob
 import sys
-from distutils.command.build_ext import build_ext
 
 from Cython.Build import cythonize
 from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext
 
 sources = ["pycrfsuite/_pycrfsuite.pyx", "pycrfsuite/trainer_wrapper.cpp"]
 

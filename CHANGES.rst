@@ -1,6 +1,20 @@
 Changes
 =======
 
+0.9.13 (unreleased)
+-------------------
+
+* Package metadata uses an SPDX license expression (PEP 639),
+  ``MIT AND BSD-3-Clause``, and the sdist and wheels now include the license
+  texts of the bundled CRFsuite (BSD-3-Clause) and liblbfgs (MIT). This
+  replaces the license table format that setuptools stops supporting in
+  February 2027. Building from source now requires setuptools 77 or newer.
+* Added project URLs (source, issues, changelog, documentation) to the
+  package metadata.
+* Build cleanups: ``setup.py`` no longer imports ``distutils``, and the
+  build no longer warns about a missing ``update_cpp.sh`` or a duplicate
+  Cython declaration.
+
 0.9.12 (2025-12-23)
 -------------------
 

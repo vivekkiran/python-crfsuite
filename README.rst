@@ -87,6 +87,6 @@ Alternatives
 
 This package (python-crfsuite) wraps CRFsuite C++ API using Cython.
 It is faster than official SWIG wrapper and has a simpler codebase than
-a more advanced pyCRFsuite. python-crfsuite works in Python 2 and Python 3,
-doesn't have external dependencies (CRFsuite is bundled, numpy/scipy stack
-is not needed) and workarounds some of the issues with C++ CRFsuite library.
+a more advanced pyCRFsuite. python-crfsuite doesn't have external
+dependencies (CRFsuite is bundled, numpy/scipy stack is not needed) and
+works around some of the issues with C++ CRFsuite library.
