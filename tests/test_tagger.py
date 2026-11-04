@@ -237,6 +237,20 @@ def test_dump(tmpdir, model_filename):
         tagger.dump(dump_filename)
 
 
+def test_dump_overwrites_existing_file(tmpdir, model_filename):
+    with Tagger().open(model_filename) as tagger:
+        fresh = str(tmpdir.join("fresh.txt"))
+        existing = str(tmpdir.join("existing.txt"))
+        tagger.dump(fresh)
+        with open(existing, "wb") as f:
+            f.write(b"OLD CONTENT\n" * 1000)  # e.g. a dump of a bigger model
+
+        tagger.dump(existing)
+
+        with open(fresh, "rb") as f1, open(existing, "rb") as f2:
+            assert f2.read() == f1.read()
+
+
 def test_info(model_filename):
     with Tagger().open(model_filename) as tagger:
         res = tagger.info()
