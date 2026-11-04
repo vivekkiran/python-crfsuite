@@ -1,6 +1,14 @@
 Changes
 =======
 
+0.9.13 (unreleased)
+-------------------
+
+* Fixed ``Tagger.open_inmemory``: the tagger now keeps the model data alive
+  while it is open. CRFsuite reads in-memory models without copying them, so
+  when the caller dropped its reference (e.g. ``open_inmemory(f.read())``),
+  tagging read freed memory and crashed or returned wrong results.
+
 0.9.12 (2025-12-23)
 -------------------
 
