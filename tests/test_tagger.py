@@ -1,3 +1,5 @@
+import struct
+
 import pytest
 
 from pycrfsuite import ItemSequence, Tagger, Trainer
@@ -47,13 +49,87 @@ def test_open_invalid_small_with_correct_signature(tmpdir):
         tagger.open(str(tmp))
 
 
-@pytest.mark.xfail(reason="see https://github.com/chokkan/crfsuite/pull/24", run=False)
 def test_open_invalid_with_correct_signature(tmpdir):
     tmp = tmpdir.join("tmp.txt")
     tmp.write(b"lCRFfoo" * 100)
     tagger = Tagger()
     with pytest.raises(ValueError):
         tagger.open(str(tmp))
+
+
+def _corrupt(data, offset, new_bytes):
+    return data[:offset] + new_bytes + data[offset + len(new_bytes) :]
+
+
+def _header_field(data, index):
+    # The 48-byte header is magic, size, type, version and 8 uint32 fields;
+    # index counts uint32 fields after "type" (0=version ... 8=off_attrrefs).
+    return struct.unpack_from("<I", data, 12 + 4 * index)[0]
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        pytest.param(lambda d: d[: len(d) // 2], id="truncated"),
+        pytest.param(lambda d: d[:48], id="header-only"),
+        pytest.param(lambda d: _corrupt(d, 8, b"XXXX"), id="model-type"),
+        pytest.param(
+            lambda d: _corrupt(d, 4, struct.pack("<I", len(d) + 1)), id="size"
+        ),
+    ]
+    + [
+        pytest.param(
+            lambda d, i=i: _corrupt(d, 12 + 4 * i, struct.pack("<I", 0xFFFFFF00)),
+            id="offset-%s" % name,
+        )
+        for i, name in [
+            (4, "features"),
+            (5, "labels"),
+            (6, "attrs"),
+            (7, "labelrefs"),
+            (8, "attrrefs"),
+        ]
+    ]
+    + [
+        pytest.param(
+            lambda d, i=i: _corrupt(d, _header_field(d, i), b"\0\0\0\0"),
+            id="chunk-tag-%s" % name,
+        )
+        for i, name in [
+            (4, "features"),
+            (5, "labels"),
+            (6, "attrs"),
+            (7, "labelrefs"),
+            (8, "attrrefs"),
+        ]
+    ]
+    + [
+        pytest.param(
+            lambda d, i=i: _corrupt(
+                d, _header_field(d, i) + 4, struct.pack("<I", 0xFFFFFF00)
+            ),
+            id="chunk-size-%s" % name,
+        )
+        for i, name in [
+            (4, "features"),
+            (5, "labels"),
+            (6, "attrs"),
+            (7, "labelrefs"),
+            (8, "attrrefs"),
+        ]
+    ],
+)
+def test_open_corrupted_model(tmpdir, model_bytes, corrupt):
+    data = corrupt(model_bytes)
+    assert data != model_bytes
+
+    with pytest.raises(ValueError):
+        Tagger().open_inmemory(data)
+
+    tmp = tmpdir.join("corrupted.crfsuite")
+    tmp.write(data, mode="wb")
+    with pytest.raises(ValueError):
+        Tagger().open(str(tmp))
 
 
 def test_open_inmemory(model_bytes, xseq, yseq):

@@ -1,6 +1,13 @@
 Changes
 =======
 
+0.9.13 (unreleased)
+-------------------
+
+* ``Tagger.open`` and ``Tagger.open_inmemory`` validate the model header and
+  chunk table, and raise ``ValueError`` for truncated or corrupted model files
+  instead of crashing.
+
 0.9.12 (2025-12-23)
 -------------------
 
