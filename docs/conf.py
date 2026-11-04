@@ -16,6 +16,12 @@ import sys
 import os
 from importlib.metadata import version as _package_version
 
+# autodoc needs the installed, compiled package. When Sphinx runs from the
+# repository root, the source tree (which has no compiled extension) would
+# shadow it, so take the repository root off sys.path.
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path[:] = [p for p in sys.path if os.path.abspath(p or os.curdir) != _repo_root]
+
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
