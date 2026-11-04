@@ -9,6 +9,7 @@ from libcpp.string cimport string
 import sys
 import os
 import contextlib
+import struct
 import tempfile
 
 from pycrfsuite import _dumpparser
@@ -34,14 +35,40 @@ class CRFSuiteError(Exception):
         Exception.__init__(self._messages.get(self.code, "Unexpected error"))
 
 
+class FeatureFormatError(ValueError, TypeError):
+    """
+    Raised when item features passed to :class:`ItemSequence`,
+    :class:`Trainer` or :class:`Tagger` are not in a supported format.
+
+    It subclasses both ValueError and TypeError, so it can be caught as
+    either.
+    """
+
+
+cdef inline _describe(obj):
+    r = repr(obj)
+    return r if len(r) <= 60 else r[:57] + '...'
+
+
 cdef string _SEP = b':'
 
-cdef extern crfsuite_api.Item to_item(x) except+:
+# to_item and to_seq are declared "except *" so that Python exceptions raised
+# while converting propagate to the caller. With the previous "extern ...
+# except+" declaration they were left pending and surfaced later as
+# SystemError ("returned a result with an exception set").
+cdef crfsuite_api.Item to_item(x) except *:
     """ Convert a Python object to an Item. """
     cdef crfsuite_api.Item c_item
     cdef double c_value
     cdef string c_key
     cdef bint is_dict, is_nested_value
+
+    if isinstance(x, (unicode, bytes)):
+        # Iterating a string would silently turn each character into a feature.
+        raise FeatureFormatError(
+            "Item features must be a dict or a list of feature names, "
+            "not a string: %s" % _describe(x)
+        )
 
     is_dict = isinstance(x, dict)
     c_item = crfsuite_api.Item()
@@ -49,8 +76,13 @@ cdef extern crfsuite_api.Item to_item(x) except+:
     for key in x:
         if isinstance(key, unicode):
             c_key = (<unicode>key).encode('utf8')
-        else:
+        elif isinstance(key, bytes):
             c_key = key
+        else:
+            raise FeatureFormatError(
+                "Feature names must be str or bytes, got %s: %s"
+                % (type(key).__name__, _describe(key))
+            )
 
         if not is_dict:
             # "string_key"
@@ -79,14 +111,21 @@ cdef extern crfsuite_api.Item to_item(x) except+:
                 else:
                     # {"string_key": float_value}
                     # {"string_key": bool}
-                    c_value = value
+                    try:
+                        c_value = value
+                    except TypeError:
+                        raise FeatureFormatError(
+                            "Feature values must be numbers, bools, strings, "
+                            "dicts, lists or sets; got %s for feature %s"
+                            % (type(value).__name__, _describe(key))
+                        ) from None
 
                 c_item.push_back(crfsuite_api.Attribute(c_key, c_value))
 
     return c_item
 
 
-cdef extern crfsuite_api.ItemSequence to_seq(pyseq) except+:
+cdef crfsuite_api.ItemSequence to_seq(pyseq) except *:
     """
     Convert an iterable to an ItemSequence.
     Elements of an iterable could be:
@@ -105,6 +144,11 @@ cdef extern crfsuite_api.ItemSequence to_seq(pyseq) except+:
     if isinstance(pyseq, ItemSequence):
         c_seq = (<ItemSequence>pyseq).c_seq
     else:
+        if isinstance(pyseq, (unicode, bytes)):
+            raise FeatureFormatError(
+                "An item sequence must be a list of items, not a string: %s"
+                % _describe(pyseq)
+            )
         for x in pyseq:
             c_seq.push_back(to_item(x))
     return c_seq
@@ -728,26 +772,93 @@ cdef class Tagger(object):
         return parser.result
 
     def _check_model(self, name):
+        # CRFsuite trusts the offsets stored in the model header and may
+        # read past the end of the buffer (and crash) if they are invalid.
         # See https://github.com/chokkan/crfsuite/pull/24
-        # 1. Check that the file can be opened.
         with open(name, 'rb') as f:
-
-            # 2. Check that file magic is correct.
-            magic = f.read(4)
-            if magic != b'lCRF':
-                raise ValueError("Invalid model file %r" % name)
-
-            # 3. Make sure crfsuite won't read past allocated memory
-            # in case of incomplete header.
             f.seek(0, os.SEEK_END)
             size = f.tell()
-            if size <= 48:  # header size
-                raise ValueError("Model file %r doesn't have a complete header" % name)
+
+            def read_at(offset, length):
+                f.seek(offset)
+                return f.read(length)
+
+            error = _model_layout_error(read_at, size)
+        if error is not None:
+            raise ValueError("Invalid model file %r: %s" % (name, error))
 
     def _check_inmemory_model(self, bytes value):
-        magic = value[:4]
-        if magic != b'lCRF':
-            raise ValueError("Invalid model")
+        def read_at(offset, length):
+            return value[offset:offset + length]
 
-        if len(value) < 48:
-            raise ValueError("Invalid model: incomplete header")
+        error = _model_layout_error(read_at, len(value))
+        if error is not None:
+            raise ValueError("Invalid model: %s" % error)
+
+
+# CRFsuite model layout (crfsuite/lib/crf/src/crf1d_model.c), little-endian:
+# a 48-byte file header followed by chunks, each starting with a
+# 12-byte chunk header {tag, size of the whole chunk, number of records}.
+# Label and attribute dictionaries are CQDB chunks (crfsuite/lib/cqdb).
+_MODEL_HEADER = struct.Struct('<4sI4s9I')
+_CHUNK_HEADER = struct.Struct('<4sII')
+_CQDB_HEADER = struct.Struct('<4sIIIII')
+_CQDB_BYTEORDER_CHECK = 0x62445371
+_CQDB_OFFSET_DATA = _CQDB_HEADER.size + 8 * 256  # header + 256 table refs
+_FEATURE_SIZE = 20  # type, src, dst (uint32) + weight (double)
+
+
+def _model_layout_error(read_at, size):
+    """
+    Check the model header and chunk table against the buffer size.
+    Return a description of the first problem found, or None.
+
+    This rejects truncated, corrupted and non-model files before they reach
+    CRFsuite. It does not validate every record inside the chunks, so model
+    files should still come from a trusted source.
+    """
+    if size < _MODEL_HEADER.size:
+        return "incomplete header"
+    (magic, total_size, model_type, version, num_features, num_labels,
+     num_attrs, off_features, off_labels, off_attrs, off_labelrefs,
+     off_attrrefs) = _MODEL_HEADER.unpack(read_at(0, _MODEL_HEADER.size))
+    if magic != b'lCRF':
+        return "bad file signature"
+    if model_type != b'FOMC':
+        return "unsupported model type %r" % model_type
+    if total_size > size:
+        return "file is truncated (header says %d bytes, got %d)" % (total_size, size)
+
+    def chunk_error(offset, what):
+        # Returns (error, chunk header fields)
+        if not _MODEL_HEADER.size <= offset <= size - _CHUNK_HEADER.size:
+            return "%s offset %d is out of range" % (what, offset), None
+        return None, _CHUNK_HEADER.unpack(read_at(offset, _CHUNK_HEADER.size))
+
+    for offset, tag, count, record_size, what in (
+        (off_features, b'FEAT', num_features, _FEATURE_SIZE, "features"),
+        (off_labelrefs, b'LFRF', num_labels, 4, "label references"),
+        (off_attrrefs, b'AFRF', num_attrs, 4, "attribute references"),
+    ):
+        error, chunk = chunk_error(offset, what)
+        if error is not None:
+            return error
+        chunk_tag, chunk_size, chunk_num = chunk
+        if chunk_tag != tag:
+            return "%s chunk is missing or corrupted" % what
+        if chunk_num < count or chunk_size < _CHUNK_HEADER.size + record_size * chunk_num:
+            return "%s chunk is inconsistent with the header" % what
+        if offset + chunk_size > size:
+            return "%s chunk extends past the end of the file" % what
+
+    for offset, what in ((off_labels, "labels"), (off_attrs, "attributes")):
+        if not _MODEL_HEADER.size <= offset <= size - _CQDB_OFFSET_DATA:
+            return "%s offset %d is out of range" % (what, offset)
+        (cqdb_tag, cqdb_size, _flag, byteorder, _bwd_size,
+         _bwd_offset) = _CQDB_HEADER.unpack(read_at(offset, _CQDB_HEADER.size))
+        if cqdb_tag != b'CQDB' or byteorder != _CQDB_BYTEORDER_CHECK:
+            return "%s dictionary is missing or corrupted" % what
+        if cqdb_size < _CQDB_OFFSET_DATA or offset + cqdb_size > size:
+            return "%s dictionary extends past the end of the file" % what
+
+    return None
