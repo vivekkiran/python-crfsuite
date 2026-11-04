@@ -12,6 +12,8 @@ Changes
 * ``Tagger.open`` and ``Tagger.open_inmemory`` validate the model header and
   chunk table, and raise ``ValueError`` for truncated or corrupted model files
   instead of crashing.
+* Tagging with a model that has no labels (e.g. one trained without any data)
+  raises ``ValueError`` instead of crashing (#28).
 
 0.9.12 (2025-12-23)
 -------------------
