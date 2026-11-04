@@ -8,6 +8,8 @@ Changes
   while it is open. CRFsuite reads in-memory models without copying them, so
   when the caller dropped its reference (e.g. ``open_inmemory(f.read())``),
   tagging read freed memory and crashed or returned wrong results.
+* Fixed ``Tagger.dump(filename)`` leaving stale content at the end of an
+  existing file that was larger than the new dump.
 
 0.9.12 (2025-12-23)
 -------------------

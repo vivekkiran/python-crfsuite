@@ -725,7 +725,7 @@ cdef class Tagger(object):
         if filename is None:
             self.c_tagger.dump(os.dup(sys.stdout.fileno()))
         else:
-            fd = os.open(filename, os.O_CREAT | os.O_WRONLY)
+            fd = os.open(filename, os.O_CREAT | os.O_WRONLY | os.O_TRUNC)
             try:
                 self.c_tagger.dump(fd)
             finally:
