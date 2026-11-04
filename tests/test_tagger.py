@@ -1,3 +1,7 @@
+import gc
+import pathlib
+import sys
+
 import pytest
 
 from pycrfsuite import ItemSequence, Tagger, Trainer
@@ -68,6 +72,57 @@ def test_open_inmemory_invalid():
 
     with pytest.raises(ValueError):
         tagger.open_inmemory(b"lCRFabc")
+
+
+def _reuse_freed_memory(size):
+    # Same-size allocations, so that a freed model buffer gets reused.
+    return [b"\x5a" * size for _ in range(50)]
+
+
+def test_open_inmemory_keeps_buffer_alive(model_bytes, xseq, yseq):
+    # CRFsuite reads an in-memory model from the buffer passed to
+    # open_inmemory() without copying it, so the Tagger must keep it alive.
+    tagger = Tagger()
+    data = bytes(bytearray(model_bytes))  # a buffer only the Tagger will hold
+    refs = sys.getrefcount(data)
+    tagger.open_inmemory(data)
+    assert sys.getrefcount(data) == refs + 1
+
+    del data
+    gc.collect()
+    junk = _reuse_freed_memory(len(model_bytes))
+    assert set(tagger.labels()) == set(yseq)
+    assert tagger.tag(xseq) == yseq
+    del junk
+    tagger.close()
+
+
+@pytest.mark.parametrize("release", ["close", "open", "open_inmemory"])
+def test_open_inmemory_releases_buffer(model_filename, model_bytes, release):
+    tagger = Tagger()
+    data = bytes(bytearray(model_bytes))
+    refs = sys.getrefcount(data)
+    tagger.open_inmemory(data)
+    if release == "close":
+        tagger.close()
+    elif release == "open":
+        tagger.open(model_filename)
+    else:
+        tagger.open_inmemory(model_bytes)
+    assert sys.getrefcount(data) == refs
+
+
+def test_failed_open_keeps_inmemory_buffer(model_filename, model_bytes):
+    # An open() that fails before reaching CRFsuite must not release the
+    # buffer of the in-memory model that is still open.
+    tagger = Tagger()
+    data = bytes(bytearray(model_bytes))
+    tagger.open_inmemory(data)
+    with pytest.raises(TypeError):  # paths must be str or bytes
+        tagger.open(pathlib.Path(model_filename))
+    held = sys.getrefcount(data)
+    tagger.close()
+    assert sys.getrefcount(data) == held - 1
 
 
 @pytest.mark.xfail(

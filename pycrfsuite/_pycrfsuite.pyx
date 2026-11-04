@@ -554,6 +554,14 @@ cdef class Tagger(object):
     input sequences using a model.
     """
     cdef crfsuite_api.Tagger c_tagger
+    # CRFsuite doesn't copy in-memory models: it reads them directly from the
+    # buffer passed to open_inmemory(). Keep that buffer alive while the model
+    # may still use it.
+    cdef bytes _model_data
+
+    def __dealloc__(self):
+        # Release the model before the buffer it may point into.
+        self.c_tagger.close()
 
     def open(self, name):
         """
@@ -569,7 +577,16 @@ cdef class Tagger(object):
         # may segfault if the file is invalid.
         # See https://github.com/chokkan/crfsuite/pull/24
         self._check_model(name)
-        if not self.c_tagger.open(name):
+        # Convert before touching the open model: if this fails, the current
+        # model (and the buffer it may use) must stay as it is.
+        cdef string c_name = name
+        try:
+            opened = self.c_tagger.open(c_name)
+        finally:
+            # CRFsuite has closed any previous model by now, and a model read
+            # from a file uses its own copy of the data.
+            self._model_data = None
+        if not opened:
             raise ValueError("Error opening model file %r" % name)
         return contextlib.closing(self)
 
@@ -585,7 +602,14 @@ cdef class Tagger(object):
         """
         self._check_inmemory_model(value)
         cdef const char *v = value
-        if not self.c_tagger.open(v, len(value)):
+        # Hold the new buffer before CRFsuite can reference it, and the
+        # previous one until CRFsuite has closed the previous model.
+        previous = self._model_data
+        self._model_data = value
+        opened = self.c_tagger.open(v, len(value))
+        previous = None
+        if not opened:
+            self._model_data = None  # no model was created from `value`
             raise ValueError("Error opening model")
         return contextlib.closing(self)
 
@@ -594,6 +618,7 @@ cdef class Tagger(object):
         Close the model.
         """
         self.c_tagger.close()
+        self._model_data = None
 
     def labels(self):
         """
