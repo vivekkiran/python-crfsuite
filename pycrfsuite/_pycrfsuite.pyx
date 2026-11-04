@@ -34,14 +34,40 @@ class CRFSuiteError(Exception):
         Exception.__init__(self._messages.get(self.code, "Unexpected error"))
 
 
+class FeatureFormatError(ValueError, TypeError):
+    """
+    Raised when item features passed to :class:`ItemSequence`,
+    :class:`Trainer` or :class:`Tagger` are not in a supported format.
+
+    It subclasses both ValueError and TypeError, so it can be caught as
+    either.
+    """
+
+
+cdef inline _describe(obj):
+    r = repr(obj)
+    return r if len(r) <= 60 else r[:57] + '...'
+
+
 cdef string _SEP = b':'
 
-cdef extern crfsuite_api.Item to_item(x) except+:
+# to_item and to_seq are declared "except *" so that Python exceptions raised
+# while converting propagate to the caller. With the previous "extern ...
+# except+" declaration they were left pending and surfaced later as
+# SystemError ("returned a result with an exception set").
+cdef crfsuite_api.Item to_item(x) except *:
     """ Convert a Python object to an Item. """
     cdef crfsuite_api.Item c_item
     cdef double c_value
     cdef string c_key
     cdef bint is_dict, is_nested_value
+
+    if isinstance(x, (unicode, bytes)):
+        # Iterating a string would silently turn each character into a feature.
+        raise FeatureFormatError(
+            "Item features must be a dict or a list of feature names, "
+            "not a string: %s" % _describe(x)
+        )
 
     is_dict = isinstance(x, dict)
     c_item = crfsuite_api.Item()
@@ -49,8 +75,13 @@ cdef extern crfsuite_api.Item to_item(x) except+:
     for key in x:
         if isinstance(key, unicode):
             c_key = (<unicode>key).encode('utf8')
-        else:
+        elif isinstance(key, bytes):
             c_key = key
+        else:
+            raise FeatureFormatError(
+                "Feature names must be str or bytes, got %s: %s"
+                % (type(key).__name__, _describe(key))
+            )
 
         if not is_dict:
             # "string_key"
@@ -79,14 +110,21 @@ cdef extern crfsuite_api.Item to_item(x) except+:
                 else:
                     # {"string_key": float_value}
                     # {"string_key": bool}
-                    c_value = value
+                    try:
+                        c_value = value
+                    except TypeError:
+                        raise FeatureFormatError(
+                            "Feature values must be numbers, bools, strings, "
+                            "dicts, lists or sets; got %s for feature %s"
+                            % (type(value).__name__, _describe(key))
+                        ) from None
 
                 c_item.push_back(crfsuite_api.Attribute(c_key, c_value))
 
     return c_item
 
 
-cdef extern crfsuite_api.ItemSequence to_seq(pyseq) except+:
+cdef crfsuite_api.ItemSequence to_seq(pyseq) except *:
     """
     Convert an iterable to an ItemSequence.
     Elements of an iterable could be:
@@ -105,6 +143,11 @@ cdef extern crfsuite_api.ItemSequence to_seq(pyseq) except+:
     if isinstance(pyseq, ItemSequence):
         c_seq = (<ItemSequence>pyseq).c_seq
     else:
+        if isinstance(pyseq, (unicode, bytes)):
+            raise FeatureFormatError(
+                "An item sequence must be a list of items, not a string: %s"
+                % _describe(pyseq)
+            )
         for x in pyseq:
             c_seq.push_back(to_item(x))
     return c_seq

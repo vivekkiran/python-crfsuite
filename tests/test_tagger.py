@@ -127,7 +127,6 @@ def test_tag_formats(tmpdir, xseq, yseq):
         assert tagger.tag(data) == yseq
 
 
-@pytest.mark.xfail()
 @pytest.mark.parametrize(
     "bad_seq",
     [

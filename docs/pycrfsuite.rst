@@ -9,6 +9,8 @@ API Reference
     :members:
     :undoc-members:
 
+.. autoexception:: FeatureFormatError
+
 Training
 --------
 

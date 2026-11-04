@@ -1,6 +1,15 @@
 Changes
 =======
 
+0.9.13 (unreleased)
+-------------------
+
+* Item features in an unsupported format now raise ``FeatureFormatError``
+  (a subclass of both ``ValueError`` and ``TypeError``) from the call that
+  received them. Previously a string was silently split into one feature per
+  character, and non-string feature names or non-numeric values left an
+  exception pending that surfaced later as ``SystemError``.
+
 0.9.12 (2025-12-23)
 -------------------
 

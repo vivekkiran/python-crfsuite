@@ -156,3 +156,10 @@ def test_get_parameter():
 def test_set_parameters_in_constructor():
     trainer = Trainer(params={"c2": 100})
     assert abs(trainer.get("c2") - 100) < 1e-6
+
+
+@pytest.mark.parametrize("bad_xseq", ["foo", ["foo", "bar", "baz"], [[{"foo": 1.0}]]])
+def test_append_invalid_feature_format(bad_xseq):
+    trainer = Trainer()
+    with pytest.raises(ValueError):
+        trainer.append(bad_xseq, ["a", "b", "c"])
